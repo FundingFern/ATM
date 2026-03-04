@@ -377,10 +377,8 @@ class ATMSessionView(discord.ui.View):
             except Exception:
                 pass
 
-<<<<<<< HEAD
         # Send new ATM screen at the bottom of the channel
         await interaction.response.send_message(
-=======
         send_kwargs = dict(
  check)
             content=content,
@@ -388,10 +386,8 @@ class ATMSessionView(discord.ui.View):
             allowed_mentions=discord.AllowedMentions(users=True),
         )
 
-<<<<<<< HEAD
         # Save reference to newest screen
         self.screen_message = await interaction.original_response()
-=======
         # If interaction already responded, send a followup instead
         if interaction.response.is_done():
             msg = await interaction.followup.send(**send_kwargs, wait=True)
@@ -538,7 +534,6 @@ class ATMSessionView(discord.ui.View):
         for item in self.children:
             item.disabled = True
 
-<<<<<<< HEAD
         await self.push_screen(
             interaction,
             content=(
@@ -549,7 +544,6 @@ class ATMSessionView(discord.ui.View):
             ),
             view=self,
            
-=======
         embed = discord.Embed(
             title="🏧 FundingFern ATM",
             description=(
@@ -575,8 +569,6 @@ class ATMSessionView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-<<<<<<< HEAD
-=======
     print("BOT VERSION CHECK")
  check)
     try:
@@ -588,13 +580,11 @@ async def on_ready():
 
 @bot.tree.command(name="atm", description="Start an ATM roleplay session")
 async def atm(interaction: discord.Interaction):
-<<<<<<< HEAD
     if PRINCESS_USER_ID is None:
         return await interaction.response.send_message("PRINCESS_USER_ID isn’t set yet.", ephemeral=True)
 
     if not interaction.guild:
         return await interaction.response.send_message("Run this command inside a server.", ephemeral=True)
-=======
     try:
         if not interaction.response.is_done():
             await interaction.response.defer(thinking=True)
@@ -611,11 +601,9 @@ async def atm(interaction: discord.Interaction):
     try:
         princess = await interaction.guild.fetch_member(PRINCESS_USER_ID)
     except discord.NotFound:
-<<<<<<< HEAD
         return await interaction.response.send_message("Princess Fern isn’t in this server.", ephemeral=True)
     except discord.Forbidden:
         return await interaction.response.send_message(
-=======
         return await interaction.followup.send("Princess Fern isn’t in this server.", ephemeral=True)
     except discord.Forbidden:
         return await interaction.followup.send(
