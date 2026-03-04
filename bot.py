@@ -382,7 +382,7 @@ class ATMSessionView(discord.ui.View):
         await interaction.response.send_message(
 =======
         send_kwargs = dict(
->>>>>>> 7b0c642 (version check)
+ check)
             content=content,
             view=view,
             allowed_mentions=discord.AllowedMentions(users=True),
@@ -401,7 +401,7 @@ class ATMSessionView(discord.ui.View):
 
         # Save newest ATM screen
         self.screen_message = msg
->>>>>>> 7b0c642 (version check)
+ check)
 
     async def show_balance_screen(self, interaction: discord.Interaction):
         bal = f"{CURRENCY}{self.balance:,.2f}" if self.balance is not None else "Not set"
@@ -559,7 +559,7 @@ class ATMSessionView(discord.ui.View):
                 "🙇🏻‍♂️ 💸 🫰🏼 👸🏼"
             ),
             color=0xFF69B4
->>>>>>> 7b0c642 (version check)
+ check)
         )
 
         embed.set_image(
@@ -578,7 +578,7 @@ async def on_ready():
 <<<<<<< HEAD
 =======
     print("BOT VERSION CHECK")
->>>>>>> 7b0c642 (version check)
+ check)
     try:
         synced = await bot.tree.sync()
         print(f"Ready as {bot.user} | synced {len(synced)} commands")
@@ -606,7 +606,7 @@ async def atm(interaction: discord.Interaction):
 
     if not interaction.guild:
         return await interaction.followup.send("Run this command inside a server.", ephemeral=True)
->>>>>>> 7b0c642 (version check)
+ check)
 
     try:
         princess = await interaction.guild.fetch_member(PRINCESS_USER_ID)
@@ -619,7 +619,7 @@ async def atm(interaction: discord.Interaction):
         return await interaction.followup.send("Princess Fern isn’t in this server.", ephemeral=True)
     except discord.Forbidden:
         return await interaction.followup.send(
->>>>>>> 7b0c642 (version check)
+ check)
             "I don’t have permission to view server members.", ephemeral=True
         )
 
