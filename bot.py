@@ -1,38 +1,63 @@
 import os
+import sqlite3
 import discord
-from discord import app_commands
 from discord.ext import commands
 from datetime import datetime, timezone
-
-async def safe_edit(interaction: discord.Interaction, **kwargs):
-    try:
-        await interaction.response.edit_message(**kwargs)
-    except discord.errors.InteractionResponded:
-        await interaction.edit_original_response(**kwargs)
-
-async def safe_edit(interaction: discord.Interaction, **kwargs):
-    try:
-        await interaction.response.edit_message(**kwargs)
-    except discord.errors.InteractionResponded:
-        await interaction.edit_original_response(**kwargs)
+from typing import Optional
 
 # --- CONFIG (edit these) ---
 LINKTREE_URL = "https://linktr.ee/FundingFern"
-CURRENCY = "£"                                # change to "$" etc if you want
+CURRENCY = "£"
 
-# If you want only you (Princess) to be selectable, set this to your Discord user ID (int).
-# Example: PRINCESS_USER_ID = 123456789012345678
-# If None, the starter screen lets the user select ANY member, like you requested.
+# Princess Fern user ID
 PRINCESS_USER_ID = 1043149535477764146
+
 # ---------------------------
+
+DB_PATH = os.getenv("DB_PATH", "atm_totals.sqlite3")
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as con:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS leak_totals (
+                user_id INTEGER PRIMARY KEY,
+                total REAL NOT NULL
+            )
+        """)
+        con.commit()
+
+def add_leak_total(user_id: int, amount: float) -> float:
+    """Adds amount to user's running total. Returns new total."""
+    with sqlite3.connect(DB_PATH) as con:
+        cur = con.execute("SELECT total FROM leak_totals WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
+        current = float(row[0]) if row else 0.0
+        new_total = current + float(amount)
+
+        con.execute(
+            "INSERT INTO leak_totals(user_id, total) VALUES(?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET total = excluded.total",
+            (user_id, new_total),
+        )
+        con.commit()
+        return new_total
+
+
+async def safe_edit(interaction: discord.Interaction, **kwargs):
+    """
+    Safely edits the message whether the interaction has responded already or not.
+    """
+    try:
+        await interaction.response.edit_message(**kwargs)
+    except discord.errors.InteractionResponded:
+        await interaction.edit_original_response(**kwargs)
 
 
 intents = discord.Intents.default()
+# If you later add role checks / member list features, enable this:
+# intents.members = True
+
 bot = commands.Bot(command_prefix="?", intents=intents)
-
-
-def is_princess(member: discord.abc.User) -> bool:
-    return PRINCESS_USER_ID is not None and getattr(member, "id", None) == PRINCESS_USER_ID
 
 
 class BalanceModal(discord.ui.Modal, title="Enter balance amount"):
@@ -48,20 +73,26 @@ class BalanceModal(discord.ui.Modal, title="Enter balance amount"):
         self.session_view = session_view
 
     async def on_submit(self, interaction: discord.Interaction):
-        # only the selected "Princess" can submit
+        # Princess OR the sub who started /atm can set/update balance
         if not self.session_view.is_allowed(interaction.user):
-            return await interaction.response.send_message("This ATM screen isn’t for you.", ephemeral=True)
+            return await interaction.response.send_message(
+                "This ATM screen isn’t for you.",
+                ephemeral=True,
+            )
 
         raw = str(self.amount.value).strip().replace(",", "")
         try:
             value = float(raw)
         except ValueError:
-            return await interaction.response.send_message("Please enter a valid number (e.g. 25 or 25.50).", ephemeral=True)
+            return await interaction.response.send_message(
+                "Please enter a valid number (e.g. 25 or 25.50).",
+                ephemeral=True,
+            )
 
         if value < 0:
             return await interaction.response.send_message("Balance can’t be negative.", ephemeral=True)
 
-        self.session_view.balance = value
+        self.session_view.balance = round(value, 2)
         await self.session_view.render_main(interaction, notice=f"Balance set to {CURRENCY}{value:,.2f}")
 
 
@@ -105,13 +136,14 @@ class WithdrawView(discord.ui.View):
         return True
 
     def add_amount_button(self, amt: float):
-        label = f"{CURRENCY}{amt:,.0f}" if amt.is_integer() else f"{CURRENCY}{amt:,.2f}"
+        label = f"{CURRENCY}{amt:,.0f}" if float(amt).is_integer() else f"{CURRENCY}{amt:,.2f}"
+        button = discord.ui.Button(label=label, style=discord.ButtonStyle.primary)
 
         async def cb(interaction: discord.Interaction):
             await self.session_view.process_withdraw(interaction, amt)
 
-        self.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.primary, custom_id=f"w_{amt}"))
-        self.children[-1].callback = cb  # type: ignore
+        button.callback = cb  # type: ignore
+        self.add_item(button)
 
     @discord.ui.button(label="Other amount", style=discord.ButtonStyle.secondary)
     async def other_amount(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -126,7 +158,6 @@ class WithdrawView(discord.ui.View):
         await self.session_view.end_session(interaction)
 
     def build(self):
-        # set amounts you requested
         for amt in [10, 15, 20, 25, 30, 50, 75, 100, 200]:
             self.add_amount_button(float(amt))
         return self
@@ -136,11 +167,10 @@ class ServiceSelect(discord.ui.Select):
     def __init__(self, session_view: "ATMSessionView"):
         self.session_view = session_view
         options = [
-            discord.SelectOption(label="Check balance", value="balance", emoji="💳"),
+            discord.SelectOption(label="Add balance", value="balance", emoji="🏦"),
             discord.SelectOption(label="Withdraw", value="withdraw", emoji="💸"),
             discord.SelectOption(label="Transaction history", value="history", emoji="🧾"),
-            discord.SelectOption(label="Return card", value="return", emoji="🪪"),
-            
+            discord.SelectOption(label="Return card", value="return", emoji="💳"),
         ]
         super().__init__(
             placeholder="Select your service…",
@@ -153,24 +183,24 @@ class ServiceSelect(discord.ui.Select):
         if not self.session_view.is_allowed(interaction.user):
             return await interaction.response.send_message(
                 "This ATM session belongs to someone else. Run **/atm** to open your own.",
-                 ephemeral=True
+                ephemeral=True,
             )
-            
 
         choice = self.values[0]
         if choice == "balance":
             await self.session_view.show_balance_screen(interaction)
         elif choice == "withdraw":
             wv = WithdrawView(self.session_view).build()
-            await interaction.response.edit_message(
-                content=self.session_view.withdraw_text(),
-                view=wv,
-                allowed_mentions=discord.AllowedMentions(users=True),
+            await self.session_view.push_screen(
+                interaction,
+                self.session_view.withdraw_text(),
+                wv
             )
         elif choice == "history":
             await self.session_view.show_history_screen(interaction)
         else:
             await self.session_view.end_session(interaction)
+
 
 class BalanceScreenView(discord.ui.View):
     def __init__(self, session_view: "ATMSessionView"):
@@ -181,7 +211,7 @@ class BalanceScreenView(discord.ui.View):
         if not self.session_view.is_allowed(interaction.user):
             await interaction.response.send_message(
                 "Access denied. Please hand the card to Princess Fern 👑.",
-                ephemeral=True
+                ephemeral=True,
             )
             return False
         return True
@@ -192,21 +222,12 @@ class BalanceScreenView(discord.ui.View):
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="⬅️")
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # go back to the main “select your service” screen
-        await interaction.response.edit_message(
-            content=self.session_view.main_text(),
-            view=self.session_view,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
+        await self.session_view.render_main(interaction)
 
     @discord.ui.button(label="Return card", style=discord.ButtonStyle.danger, emoji="🪪")
     async def return_card(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.session_view.end_session(interaction)
 
-class ReceiptView(discord.ui.View):
-    def __init__(self, session_view: "ATMSessionView"):
-        super().__init__(timeout=600)
-        self.session_view = session_view
 
 class HistoryView(discord.ui.View):
     def __init__(self, session_view: "ATMSessionView"):
@@ -217,10 +238,60 @@ class HistoryView(discord.ui.View):
         if not self.session_view.is_allowed(interaction.user):
             await interaction.response.send_message(
                 "Access denied. Please hand the card to Princess Fern 👑.",
-                ephemeral=True
+                ephemeral=True,
             )
             return False
         return True
+
+    @discord.ui.button(label="Dispensed", style=discord.ButtonStyle.success, emoji="💳")
+    async def dispensed_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        if self.session_view.dispensed:
+            return await interaction.response.send_message(
+                "Already marked as dispensed.",
+                ephemeral=True,
+            )
+
+        self.session_view.dispensed = True
+        button.disabled = True
+
+        # Update the receipt so the button greys out
+        await safe_edit(interaction, view=self)
+
+        amt = self.session_view.last_withdrawal
+
+        if amt is None:
+           return await interaction.response.send_message(
+               "No withdrawal amount found for this receipt.",
+               ephemeral=True,
+           )
+
+        amt_text = (
+            f"{CURRENCY}{int(amt):,}" if amt is not None and amt.is_integer()
+            else f"{CURRENCY}{amt:,.2f}" if amt is not None
+            else "cash"
+        )
+
+        user_id = self.session_view.user_id
+        total = add_leak_total(user_id, float(amt or 0))
+        
+        total_text = (
+            f"{CURRENCY}{int(total):,}" if float(total).is_integer()
+            else f"{CURRENCY}{total:,.2f}"
+        )
+
+        msg = (
+            f"🏧 **DISPENSED**\n"
+            f"ATM toy {self.session_view.user_mention} has successfully leaked "
+            f"{amt_text} for Princess Fern 👑 💳 🫦\n\n"
+            f"💰 **Total leaked by this toy:** {total_text}"
+        )
+
+        # Public announcement (everyone sees it)
+        await interaction.channel.send(msg)  # type: ignore
+
+        
+        
 
     @discord.ui.button(label="Back to services", style=discord.ButtonStyle.primary, emoji="🏧")
     async def back_services(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -243,123 +314,45 @@ class HistoryView(discord.ui.View):
     async def return_card(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.session_view.end_session(interaction)
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.session_view.princess_id:
-            await interaction.response.send_message(
-                "Access denied. Please hand the card to Princess Fern 👑.",
-                ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="Back to services", style=discord.ButtonStyle.primary, emoji="🏧")
-    async def back_services(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(
-            content=self.session_view.main_text(),
-            view=self.session_view,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
-
-    @discord.ui.button(label="Withdraw again", style=discord.ButtonStyle.secondary, emoji="💸")
-    async def withdraw_again(self, interaction: discord.Interaction, button: discord.ui.Button):
-        wv = WithdrawView(self.session_view).build()
-        await interaction.response.edit_message(
-            content=self.session_view.withdraw_text(),
-            view=wv,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
-
-    @discord.ui.button(label="Return card", style=discord.ButtonStyle.danger, emoji="🪪")
-    async def return_card(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.session_view.end_session(interaction)
-class ReceiptView(discord.ui.View):
-    def __init__(self, session_view: "ATMSessionView"):
-        super().__init__(timeout=600)
-        self.session_view = session_view
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if not self.session_view.is_allowed(interaction.user):
-            await interaction.response.send_message(
-                "Access denied. Please hand the card to Princess Fern 👑.",
-                ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="Back to services", style=discord.ButtonStyle.primary, emoji="🏧")
-    async def back_services(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(
-            content=self.session_view.main_text(),
-            view=self.session_view,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
-
-    @discord.ui.button(label="Withdraw again", style=discord.ButtonStyle.secondary, emoji="💸")
-    async def withdraw_again(self, interaction: discord.Interaction, button: discord.ui.Button):
-        wv = WithdrawView(self.session_view).build()
-        await interaction.response.edit_message(
-            content=self.session_view.withdraw_text(),
-            view=wv,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
-
-    @discord.ui.button(label="Return card", style=discord.ButtonStyle.danger, emoji="🪪")
-    async def return_card(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.session_view.end_session(interaction)
 
 class ATMSessionView(discord.ui.View):
     def __init__(self, princess: discord.Member, user: discord.abc.User):
         super().__init__(timeout=900)
 
-        # Princess (always allowed)
         self.princess_id = princess.id
         self.princess_mention = princess.mention
 
-        # The sub who started /atm (allowed)
         self.user_id = user.id
         self.user_mention = user.mention
 
-        self.balance: float | None = None
-        self.transactions = []
+        self.balance: Optional[float] = None
+        self.transactions: list[dict] = []
+
+        self.dispensed = False
+        self.last_withdrawal: Optional[float] = None
+        self.screen_message: Optional[discord.Message] = None
+
+
         self.add_item(ServiceSelect(self))
 
     def is_allowed(self, user: discord.abc.User) -> bool:
         return user.id in (self.user_id, self.princess_id)
 
-    async def show_balance_screen(self, interaction: discord.Interaction):
-        bal = f"{CURRENCY}{self.balance:,.2f}" if self.balance is not None else "Not set"
-        content = (
-            "🏧 **Balance Inquiry**\n"
-            f"Customer: Princess Fern 👑 ({self.princess_mention})\n"
-            f"Balance: **{bal}**\n\n"
-            "Choose an option below."
-        )
-        await interaction.response.edit_message(
-            content=content,
-            view=BalanceScreenView(self),
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
-
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not self.is_allowed(interaction.user):
             await interaction.response.send_message(
                 "Access denied. Please hand the card to Princess Fern 👑.",
-                ephemeral=True
+                ephemeral=True,
             )
             return False
         return True
 
-    def main_text(self, notice: str | None = None) -> str:
-        lines = [
-            f"🏧 Hello {self.user_mention} — you are dispensing for Princess Fern 👑."
-]
-
+    def main_text(self, notice: Optional[str] = None) -> str:
+        lines = [f"🏧 Hello {self.user_mention} — you are dispensing for Princess Fern 👑."]
         if self.balance is not None:
             lines.append(f"**Current balance:** {CURRENCY}{self.balance:,.2f}")
-
         if notice:
             lines.append(f"\n{notice}")
-
         return "\n".join(lines)
 
     def withdraw_text(self) -> str:
@@ -371,8 +364,45 @@ class ATMSessionView(discord.ui.View):
     def _money(self, amount: float) -> str:
         return f"{CURRENCY}{amount:,.2f}"
 
+    async def render_main(self, interaction: discord.Interaction, notice: Optional[str] = None):
+        await self.push_screen(
+            interaction,
+            self.main_text(notice=notice),
+            self
+        )
+    async def push_screen(self, interaction: discord.Interaction, content: str, view: discord.ui.View):
+        # Disable previous ATM screen so old buttons can't be used
+        if self.screen_message:
+            try:
+                await self.screen_message.edit(view=None)
+            except Exception:
+                pass
+
+        # Send new ATM screen at the bottom of the channel
+        await interaction.response.send_message(
+            content=content,
+            view=view,
+            allowed_mentions=discord.AllowedMentions(users=True),
+        )
+
+        # Save reference to newest screen
+        self.screen_message = await interaction.original_response()
+
+    async def show_balance_screen(self, interaction: discord.Interaction):
+        bal = f"{CURRENCY}{self.balance:,.2f}" if self.balance is not None else "Not set"
+        content = (
+            "🏧 **Balance Inquiry**\n"
+            f"Customer: Princess Fern 👑 ({self.princess_mention})\n"
+            f"Balance: **{bal}**\n\n"
+            "Choose an option below."
+        )
+        await self.push_screen(
+            interaction,
+            content,
+            BalanceScreenView(self),
+        )
+
     def _receipt_slip(self, withdrawal: float, new_balance: float, tx_id: str) -> str:
-        # 32-char width is a sweet spot for Discord mobile + “thermal” feel
         W = 32
 
         def c(text: str) -> str:
@@ -385,15 +415,10 @@ class ATMSessionView(discord.ui.View):
                 left = left[: max(0, W - len(right) - 1)]
             return f"{left}{' ' * (W - len(left) - len(right))}{right}"
 
-        # realistic-ish printed details (roleplay)
         now = datetime.now(timezone.utc)
         ts_line = now.strftime("%d/%m/%Y  %H:%M:%S UTC")
-
-        # masked “card” (stable-ish but fake)
         last4 = str(self.princess_id)[-4:]
         card_line = f"**** **** **** {last4}"
-
-        # make simple pseudo codes from tx_id
         auth = f"A{tx_id[-6:]}"
         term = f"T{tx_id[:6]}"
 
@@ -421,7 +446,6 @@ class ATMSessionView(discord.ui.View):
             "-" * W,
             c("SAY THANK YOU PRINCESS 👑"),
         ]
-
         return "```text\n" + "\n".join(lines) + "\n```"
 
     async def show_history_screen(self, interaction: discord.Interaction):
@@ -432,10 +456,8 @@ class ATMSessionView(discord.ui.View):
                 "Make a withdrawal to generate your first receipt."
             )
         else:
-            last = self.transactions[-10:]  # last 10 only
-
+            last = self.transactions[-10:]
             lines = ["🏧 **Transaction History**", ""]
-
             for i, tx in enumerate(reversed(last), 1):
                 lines.append(f"**Transaction {i}**")
                 lines.append(f"🗓 Date: {tx['ts']} UTC")
@@ -443,80 +465,55 @@ class ATMSessionView(discord.ui.View):
                 lines.append(f"💰 Amount: {tx['amt']}")
                 lines.append(f"🏦 Balance Remaining: {tx['bal']}")
                 lines.append("────────────────────")
-            
             content = "\n".join(lines)
 
-        try:
-            await safe_edit(
+        await safe_edit(
             interaction,
             content=content,
             view=self,
             allowed_mentions=discord.AllowedMentions(users=True),
         )
-        except discord.errors.InteractionResponded:
-            await interaction.edit_original_response(
-                content=content,
-                view=self,
-                allowed_mentions=discord.AllowedMentions(users=True),
-            )
-        await interaction.edit_original_response(
-            content=content,
-            view=self,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
-
-    async def render_main(self, interaction: discord.Interaction, notice: str | None = None):
-        await interaction.response.edit_message(
-            content=self.main_text(notice=notice),
-            view=self,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
 
     async def process_withdraw(self, interaction: discord.Interaction, amount: float):
-        # Ensure a balance exists
         if self.balance is None:
-            notice = (
-                "❌ Balance not set.\n"
-                "Use **Check balance** to enter / update your balance first."
+            return await self.render_main(
+                interaction,
+                notice="❌ Balance not set.\nUse **Check balance** to enter / update your balance first.",
             )
-            return await self.render_main(interaction, notice=notice)
 
-        # Insufficient funds
         if amount > self.balance:
-            notice = (
-                f"❌ Insufficient funds.\n"
-                f"Requested: **{self._money(amount)}**\n"
-                f"Available: **{self._money(self.balance)}**"
+            return await self.render_main(
+                interaction,
+                notice=(
+                    f"❌ Insufficient funds.\n"
+                    f"Requested: **{self._money(amount)}**\n"
+                    f"Available: **{self._money(self.balance)}**"
+                ),
             )
-            return await self.render_main(interaction, notice=notice)
 
-        # Decrease balance
         self.balance = round(self.balance - amount, 2)
 
-        # Create transaction ID + log it
+        self.last_withdrawal = amount
+        self.dispensed = False
+        
         now = datetime.now(timezone.utc)
         tx_id = str(int(now.timestamp()))[-8:]
 
-        self.transactions.append({
-            "ts": now.strftime("%Y-%m-%d %H:%M"),
-            "type": "WITHDRAW",
-            "amt": self._money(amount),
-            "bal": self._money(self.balance),
-            "id": tx_id,
-        })
-
-        # Build receipt slip
-        slip = self._receipt_slip(
-            withdrawal=amount,
-            new_balance=self.balance,
-            tx_id=tx_id
+        self.transactions.append(
+            {
+                "ts": now.strftime("%Y-%m-%d %H:%M"),
+                "type": "WITHDRAW",
+                "amt": self._money(amount),
+                "bal": self._money(self.balance),
+                "id": tx_id,
+            }
         )
 
-        # Add clickable gift link OUTSIDE the code block
+        slip = self._receipt_slip(withdrawal=amount, new_balance=self.balance, tx_id=tx_id)
         content = f"{slip}\n\n🎁 **Gift here:** {LINKTREE_URL}"
 
-        # Replace the same ATM message with receipt screen
-        await interaction.response.edit_message(
+        await safe_edit(
+            interaction,
             content=content,
             view=HistoryView(self),
             allowed_mentions=discord.AllowedMentions(users=True),
@@ -526,19 +523,23 @@ class ATMSessionView(discord.ui.View):
         for item in self.children:
             item.disabled = True
 
-        await interaction.response.edit_message(
-            content="✅ Thank you for using me, Princess Fern 👑.",
+        await self.push_screen(
+            interaction,
+            content=(
+                "🏧 **More for Fern, F*cked for Fern, Milked for Fern.**\n\n"
+                "Good ATM toy — being used like an object for Princess Fern’s pleasure.\n"
+                "Keep slaving away so you can top up my ATM 💳 and I can use you **more, more, more.**\n\n"
+                "🙇🏻‍♂️ 💸 🫰🏼 👸🏼"
+            ),
             view=self,
-            allowed_mentions=discord.AllowedMentions(users=True),
+           
         )
 
         self.stop()
 
 
-
 @bot.event
 async def on_ready():
-    # sync slash commands
     try:
         synced = await bot.tree.sync()
         print(f"Ready as {bot.user} | synced {len(synced)} commands")
@@ -548,30 +549,19 @@ async def on_ready():
 
 @bot.tree.command(name="atm", description="Start an ATM roleplay session")
 async def atm(interaction: discord.Interaction):
-
     if PRINCESS_USER_ID is None:
-        return await interaction.response.send_message(
-            "PRINCESS_USER_ID isn’t set yet.",
-            ephemeral=True
-        )
+        return await interaction.response.send_message("PRINCESS_USER_ID isn’t set yet.", ephemeral=True)
 
     if not interaction.guild:
-        return await interaction.response.send_message(
-            "Run this command inside a server.",
-            ephemeral=True
-        )
+        return await interaction.response.send_message("Run this command inside a server.", ephemeral=True)
 
     try:
         princess = await interaction.guild.fetch_member(PRINCESS_USER_ID)
     except discord.NotFound:
-        return await interaction.response.send_message(
-            "Princess Fern isn’t in this server.",
-            ephemeral=True
-        )
+        return await interaction.response.send_message("Princess Fern isn’t in this server.", ephemeral=True)
     except discord.Forbidden:
         return await interaction.response.send_message(
-            "I don’t have permission to view server members.",
-            ephemeral=True
+            "I don’t have permission to view server members.", ephemeral=True
         )
 
     session_view = ATMSessionView(princess, interaction.user)
@@ -585,7 +575,10 @@ async def atm(interaction: discord.Interaction):
 
 
 # Run
-TOKEN = os.getenv("BOT2_TOKEN")
+TOKEN = os.getenv("BOT2_TOKEN")  # we can rename this to DISCORD_TOKEN when we do Render
 if not TOKEN:
     raise RuntimeError("Set BOT2_TOKEN environment variable first.")
+
+init_db()
+
 bot.run(TOKEN)
