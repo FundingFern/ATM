@@ -259,18 +259,11 @@ class HistoryView(discord.ui.View):
         await safe_edit(interaction, view=self)
 
         amt = self.session_view.last_withdrawal
-
         if amt is None:
-<<<<<<< HEAD
-           return await interaction.response.send_message(
-               "No withdrawal amount found for this receipt.",
-               ephemeral=True,
-=======
-           return await interaction.followup.send(
+            return await interaction.followup.send(
                 "No withdrawal amount found for this receipt.",
                 ephemeral=True,
->>>>>>> 7b0c642 (version check)
-           )
+            )
 
         amt_text = (
             f"{CURRENCY}{int(amt):,}" if amt is not None and amt.is_integer()
