@@ -247,9 +247,9 @@ class HistoryView(discord.ui.View):
     async def dispensed_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         if self.session_view.dispensed:
-            return await interaction.response.send_message(
-                "Already marked as dispensed.",
-                ephemeral=True,
+            return await interaction.followup.send(
+                 "Already marked as dispensed.",
+                 ephemeral=True,
             )
 
         self.session_view.dispensed = True
@@ -261,9 +261,15 @@ class HistoryView(discord.ui.View):
         amt = self.session_view.last_withdrawal
 
         if amt is None:
+<<<<<<< HEAD
            return await interaction.response.send_message(
                "No withdrawal amount found for this receipt.",
                ephemeral=True,
+=======
+           return await interaction.followup.send(
+                "No withdrawal amount found for this receipt.",
+                ephemeral=True,
+>>>>>>> 7b0c642 (version check)
            )
 
         amt_text = (
@@ -378,15 +384,31 @@ class ATMSessionView(discord.ui.View):
             except Exception:
                 pass
 
+<<<<<<< HEAD
         # Send new ATM screen at the bottom of the channel
         await interaction.response.send_message(
+=======
+        send_kwargs = dict(
+>>>>>>> 7b0c642 (version check)
             content=content,
             view=view,
             allowed_mentions=discord.AllowedMentions(users=True),
         )
 
+<<<<<<< HEAD
         # Save reference to newest screen
         self.screen_message = await interaction.original_response()
+=======
+        # If interaction already responded, send a followup instead
+        if interaction.response.is_done():
+            msg = await interaction.followup.send(**send_kwargs, wait=True)
+        else:
+            await interaction.response.send_message(**send_kwargs)
+            msg = await interaction.original_response()
+
+        # Save newest ATM screen
+        self.screen_message = msg
+>>>>>>> 7b0c642 (version check)
 
     async def show_balance_screen(self, interaction: discord.Interaction):
         bal = f"{CURRENCY}{self.balance:,.2f}" if self.balance is not None else "Not set"
@@ -523,6 +545,7 @@ class ATMSessionView(discord.ui.View):
         for item in self.children:
             item.disabled = True
 
+<<<<<<< HEAD
         await self.push_screen(
             interaction,
             content=(
@@ -533,13 +556,36 @@ class ATMSessionView(discord.ui.View):
             ),
             view=self,
            
+=======
+        embed = discord.Embed(
+            title="🏧 FundingFern ATM",
+            description=(
+                "🏧 **More for Fern, F*cked for Fern, Milked for Fern.**\n\n"
+                "Good ATM toy — being used like an object for Princess Fern’s pleasure.\n"
+                "Keep slaving away so you can top up my ATM 💳 so I can use you **more, more, more.**\n\n"
+                "🙇🏻‍♂️ 💸 🫰🏼 👸🏼"
+            ),
+            color=0xFF69B4
+>>>>>>> 7b0c642 (version check)
         )
 
-        self.stop()
+        embed.set_image(
+            url="https://cdn.discordapp.com/attachments/1438965820993699980/1478807970476327092/ChatGPT_Image_Mar_4_2026_at_05_11_45_PM.png"
+        )
 
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, view=None)
+        else:
+            await interaction.response.send_message(embed=embed)
+
+        self.stop()     
 
 @bot.event
 async def on_ready():
+<<<<<<< HEAD
+=======
+    print("BOT VERSION CHECK")
+>>>>>>> 7b0c642 (version check)
     try:
         synced = await bot.tree.sync()
         print(f"Ready as {bot.user} | synced {len(synced)} commands")
@@ -549,28 +595,59 @@ async def on_ready():
 
 @bot.tree.command(name="atm", description="Start an ATM roleplay session")
 async def atm(interaction: discord.Interaction):
+<<<<<<< HEAD
     if PRINCESS_USER_ID is None:
         return await interaction.response.send_message("PRINCESS_USER_ID isn’t set yet.", ephemeral=True)
 
     if not interaction.guild:
         return await interaction.response.send_message("Run this command inside a server.", ephemeral=True)
+=======
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(thinking=True)
+    except (discord.NotFound, discord.HTTPException):
+        return
+
+    if PRINCESS_USER_ID is None:
+        return await interaction.followup.send("PRINCESS_USER_ID isn’t set yet.", ephemeral=True)
+
+    if not interaction.guild:
+        return await interaction.followup.send("Run this command inside a server.", ephemeral=True)
+>>>>>>> 7b0c642 (version check)
 
     try:
         princess = await interaction.guild.fetch_member(PRINCESS_USER_ID)
     except discord.NotFound:
+<<<<<<< HEAD
         return await interaction.response.send_message("Princess Fern isn’t in this server.", ephemeral=True)
     except discord.Forbidden:
         return await interaction.response.send_message(
+=======
+        return await interaction.followup.send("Princess Fern isn’t in this server.", ephemeral=True)
+    except discord.Forbidden:
+        return await interaction.followup.send(
+>>>>>>> 7b0c642 (version check)
             "I don’t have permission to view server members.", ephemeral=True
         )
 
     session_view = ATMSessionView(princess, interaction.user)
 
-    await interaction.response.send_message(
-        content=session_view.main_text(),
+    embed = discord.Embed(
+        title="🏧 FundingFern ATM",
+        description=session_view.main_text(),
+        color=0xFF69B4
+    )
+
+    embed.set_image(
+        url="https://cdn.discordapp.com/attachments/1438965820993699980/1478807970476327092/ChatGPT_Image_Mar_4_2026_at_05_11_45_PM.png"
+    )
+
+    await interaction.channel.send(f"{princess.mention} 💳 Your ATM toy has started a session.")
+
+    await interaction.followup.send(
+        embed=embed,
         view=session_view,
         allowed_mentions=discord.AllowedMentions(users=True),
-        ephemeral=False,
     )
 
 
