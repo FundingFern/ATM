@@ -395,7 +395,7 @@ class ATMSessionView(discord.ui.View):
 
         # Save newest ATM screen
         self.screen_message = msg
- check)
+ 
 
     async def show_balance_screen(self, interaction: discord.Interaction):
         bal = f"{CURRENCY}{self.balance:,.2f}" if self.balance is not None else "Not set"
