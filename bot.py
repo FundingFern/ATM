@@ -551,7 +551,6 @@ class ATMSessionView(discord.ui.View):
                 "🙇🏻‍♂️ 💸 🫰🏼 👸🏼"
             ),
             color=0xFF69B4
- check)
         )
 
         embed.set_image(
