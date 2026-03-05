@@ -378,9 +378,7 @@ class ATMSessionView(discord.ui.View):
                 pass
 
         # Send new ATM screen at the bottom of the channel
-        await interaction.response.send_message(
         send_kwargs = dict(
- check)
             content=content,
             view=view,
             allowed_mentions=discord.AllowedMentions(users=True),
