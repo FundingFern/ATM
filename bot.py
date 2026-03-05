@@ -259,11 +259,12 @@ class HistoryView(discord.ui.View):
         await safe_edit(interaction, view=self)
 
         amt = self.session_view.last_withdrawal
+
         if amt is None:
-            return await interaction.followup.send(
+           return await interaction.followup.send(
                 "No withdrawal amount found for this receipt.",
                 ephemeral=True,
-            )
+           )
 
         amt_text = (
             f"{CURRENCY}{int(amt):,}" if amt is not None and amt.is_integer()
@@ -377,15 +378,12 @@ class ATMSessionView(discord.ui.View):
             except Exception:
                 pass
 
-        # Send new ATM screen at the bottom of the channel
         send_kwargs = dict(
             content=content,
             view=view,
             allowed_mentions=discord.AllowedMentions(users=True),
         )
 
-        # Save reference to newest screen
-        self.screen_message = await interaction.original_response()
         # If interaction already responded, send a followup instead
         if interaction.response.is_done():
             msg = await interaction.followup.send(**send_kwargs, wait=True)
@@ -395,7 +393,6 @@ class ATMSessionView(discord.ui.View):
 
         # Save newest ATM screen
         self.screen_message = msg
- 
 
     async def show_balance_screen(self, interaction: discord.Interaction):
         bal = f"{CURRENCY}{self.balance:,.2f}" if self.balance is not None else "Not set"
@@ -532,17 +529,6 @@ class ATMSessionView(discord.ui.View):
         for item in self.children:
             item.disabled = True
 
-        await self.push_screen(
-            interaction,
-            content=(
-                "🏧 **More for Fern, F*cked for Fern, Milked for Fern.**\n\n"
-                "Good ATM toy — being used like an object for Princess Fern’s pleasure.\n"
-                "Keep slaving away so you can top up my ATM 💳 and I can use you **more, more, more.**\n\n"
-                "🙇🏻‍♂️ 💸 🫰🏼 👸🏼"
-            ),
-            view=self,
-        )
-   
         embed = discord.Embed(
             title="🏧 FundingFern ATM",
             description=(
@@ -565,6 +551,7 @@ class ATMSessionView(discord.ui.View):
 
         self.stop()     
 
+
 @bot.event
 async def on_ready():
     print("BOT VERSION CHECK")
@@ -577,11 +564,6 @@ async def on_ready():
 
 @bot.tree.command(name="atm", description="Start an ATM roleplay session")
 async def atm(interaction: discord.Interaction):
-    if PRINCESS_USER_ID is None:
-        return await interaction.response.send_message("PRINCESS_USER_ID isn’t set yet.", ephemeral=True)
-
-    if not interaction.guild:
-        return await interaction.response.send_message("Run this command inside a server.", ephemeral=True)
     try:
         if not interaction.response.is_done():
             await interaction.response.defer(thinking=True)
@@ -597,9 +579,6 @@ async def atm(interaction: discord.Interaction):
     try:
         princess = await interaction.guild.fetch_member(PRINCESS_USER_ID)
     except discord.NotFound:
-        return await interaction.response.send_message("Princess Fern isn’t in this server.", ephemeral=True)
-    except discord.Forbidden:
-        return await interaction.response.send_message(
         return await interaction.followup.send("Princess Fern isn’t in this server.", ephemeral=True)
     except discord.Forbidden:
         return await interaction.followup.send(
