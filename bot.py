@@ -541,7 +541,8 @@ class ATMSessionView(discord.ui.View):
                 "🙇🏻‍♂️ 💸 🫰🏼 👸🏼"
             ),
             view=self,
-           
+        )
+   
         embed = discord.Embed(
             title="🏧 FundingFern ATM",
             description=(
