@@ -568,7 +568,6 @@ class ATMSessionView(discord.ui.View):
 @bot.event
 async def on_ready():
     print("BOT VERSION CHECK")
- check)
     try:
         synced = await bot.tree.sync()
         print(f"Ready as {bot.user} | synced {len(synced)} commands")
@@ -594,7 +593,6 @@ async def atm(interaction: discord.Interaction):
 
     if not interaction.guild:
         return await interaction.followup.send("Run this command inside a server.", ephemeral=True)
- check)
 
     try:
         princess = await interaction.guild.fetch_member(PRINCESS_USER_ID)
@@ -605,7 +603,6 @@ async def atm(interaction: discord.Interaction):
         return await interaction.followup.send("Princess Fern isn’t in this server.", ephemeral=True)
     except discord.Forbidden:
         return await interaction.followup.send(
- check)
             "I don’t have permission to view server members.", ephemeral=True
         )
 
